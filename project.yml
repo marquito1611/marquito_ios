@@ -1,0 +1,20 @@
+name: Marquito
+options:
+  bundleIdPrefix: com.marquito
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  Marquito:
+    type: application
+    platform: iOS
+    sources:
+      - Marquito
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.marquito.app
+        PRODUCT_NAME: Marquito
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        INFOPLIST_KEY_CFBundleDisplayName: Marquito
+        INFOPLIST_KEY_LSRequiresIPhoneOS: YES
+        GENERATE_INFOPLIST_FILE: YES
