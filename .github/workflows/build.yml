@@ -8,30 +8,87 @@ on:
       - "**/*.zip"
       - ".github/workflows/build.yml"
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: macos-latest
 
     steps:
       - name: Descargar repositorio
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Buscar y descomprimir ZIP
+      - name: Preparar herramientas
         run: |
-          ZIP=$(find . -type f -name "*.zip" | head -n 1)
+          brew install xcodegen
+          xcodebuild -version
+
+      - name: Descomprimir proyecto
+        run: |
+          ZIP=$(find . -maxdepth 1 -type f -iname "*.zip" | head -n 1)
           if [ -z "$ZIP" ]; then
-            echo "No se encontró ningún ZIP"
+            echo "::error::No se encontró el ZIP del proyecto"
             exit 1
           fi
           mkdir -p extracted
           unzip -o "$ZIP" -d extracted
-          find extracted -maxdepth 4 -type f | head -100
+          find extracted -maxdepth 5 -type f | head -200
 
-      - name: Comprobar herramientas
+      - name: Generar proyecto Xcode
         run: |
-          xcodebuild -version
-          swift --version
+          PROJECT_YML=$(find extracted -type f -name project.yml | head -n 1)
+          if [ -n "$PROJECT_YML" ]; then
+            cd "$(dirname "$PROJECT_YML")"
+            xcodegen generate
+          fi
+          PROJECT=$(find "$GITHUB_WORKSPACE/extracted" -type d -name "*.xcodeproj" | head -n 1)
+          if [ -z "$PROJECT" ]; then
+            echo "::error::No se encontró un proyecto Xcode ni se pudo generar"
+            exit 1
+          fi
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
 
-      - name: Mostrar archivos del proyecto
+      - name: Detectar esquema
         run: |
-          find extracted -type f \( -name "project.yml" -o -name "*.xcodeproj" -o -name "Package.swift" \)
+          xcodebuild -list -json -project "$PROJECT" > schemes.json
+          SCHEME=$(python3 -c '
+          import json
+          d=json.load(open("schemes.json"))
+          s=d["project"]["schemes"]
+          print("Marquito" if "Marquito" in s else s[0])
+          ')
+          echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
+          echo "Esquema seleccionado: $SCHEME"
+
+      - name: Compilar aplicación iOS
+        run: |
+          xcodebuild \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Crear IPA sin firmar
+        run: |
+          APP=$(find "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos" \
+            -maxdepth 1 -type d -name "*.app" | head -n 1)
+          if [ -z "$APP" ]; then
+            echo "::error::No se encontró la aplicación compilada"
+            exit 1
+          fi
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qr Marquito-unsigned.ipa Payload
+          rm -rf Payload
+
+      - name: Publicar IPA descargable
+        uses: actions/upload-artifact@v4
+        with:
+          name: Marquito-unsigned-IPA
+          path: Marquito-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
