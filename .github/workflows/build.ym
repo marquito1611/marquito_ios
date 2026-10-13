@@ -1,0 +1,37 @@
+name: Build Marquito iOS
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "*.zip"
+      - "**/*.zip"
+      - ".github/workflows/build.yml"
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Buscar y descomprimir ZIP
+        run: |
+          ZIP=$(find . -type f -name "*.zip" | head -n 1)
+          if [ -z "$ZIP" ]; then
+            echo "No se encontró ningún ZIP"
+            exit 1
+          fi
+          mkdir -p extracted
+          unzip -o "$ZIP" -d extracted
+          find extracted -maxdepth 4 -type f | head -100
+
+      - name: Comprobar herramientas
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Mostrar archivos del proyecto
+        run: |
+          find extracted -type f \( -name "project.yml" -o -name "*.xcodeproj" -o -name "Package.swift" \)
